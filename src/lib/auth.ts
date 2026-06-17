@@ -12,20 +12,34 @@ export const authOptions: NextAuthOptions = {
         password: { label: "Password", type: "password" },
       },
       async authorize(credentials) {
-        if (!credentials?.email || !credentials?.password) {
+        try {
+          if (!credentials?.email || !credentials?.password) {
+            console.log("[auth] authorize: missing email or password");
+            return null;
+          }
+          const email = credentials.email.toLowerCase().trim();
+          const user = await db.user.findUnique({
+            where: { email },
+          });
+          if (!user) {
+            console.log(`[auth] authorize: no user found for email "${email}"`);
+            return null;
+          }
+          const ok = await bcrypt.compare(credentials.password, user.passwordHash);
+          if (!ok) {
+            console.log(`[auth] authorize: bcrypt compare failed for "${email}"`);
+            return null;
+          }
+          console.log(`[auth] authorize: success for "${email}"`);
+          return {
+            id: user.id,
+            email: user.email,
+            name: user.name,
+          };
+        } catch (e) {
+          console.error("[auth] authorize error:", e);
           return null;
         }
-        const user = await db.user.findUnique({
-          where: { email: credentials.email.toLowerCase() },
-        });
-        if (!user) return null;
-        const ok = await bcrypt.compare(credentials.password, user.passwordHash);
-        if (!ok) return null;
-        return {
-          id: user.id,
-          email: user.email,
-          name: user.name,
-        };
       },
     }),
   ],

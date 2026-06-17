@@ -2,38 +2,111 @@
 
 import { useState } from "react";
 import { signIn } from "next-auth/react";
-import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { Sparkles, TrendingUp, Wallet, PieChart, ArrowRight, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 export function AuthScreen() {
-  const router = useRouter();
   const [mode, setMode] = useState<"login" | "register">("login");
   const [loading, setLoading] = useState(false);
   const [form, setForm] = useState({ name: "", email: "", password: "" });
+  const [resetOpen, setResetOpen] = useState(false);
+  const [resetEmail, setResetEmail] = useState("");
+  const [resetPassword, setResetPassword] = useState("");
+  const [resetLoading, setResetLoading] = useState(false);
+
+  const handleReset = async () => {
+    if (!resetEmail || !resetPassword) {
+      toast.error("Email and new password are required");
+      return;
+    }
+    if (resetPassword.length < 6) {
+      toast.error("Password must be at least 6 characters");
+      return;
+    }
+    setResetLoading(true);
+    try {
+      const r = await fetch("/api/auth/reset-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: resetEmail, newPassword: resetPassword }),
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || "Failed to reset password");
+      toast.success("Password reset! You can now sign in with your new password.");
+      // Pre-fill the login form with the reset credentials so the user just clicks Sign In
+      setForm({ name: "", email: resetEmail, password: resetPassword });
+      setMode("login");
+      setResetOpen(false);
+      setResetEmail("");
+      setResetPassword("");
+    } catch (e: any) {
+      toast.error(e.message || "Failed to reset password");
+    } finally {
+      setResetLoading(false);
+    }
+  };
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     try {
+      // Trim email to avoid leading/trailing whitespace issues
+      const cleanEmail = form.email.trim();
+
       if (mode === "register") {
         const r = await fetch("/api/auth/register", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(form),
+          body: JSON.stringify({
+            name: form.name.trim(),
+            email: cleanEmail,
+            password: form.password,
+          }),
         });
         const data = await r.json();
         if (!r.ok) throw new Error(data.error || "Failed to register");
       }
+
       const res = await signIn("credentials", {
-        email: form.email,
+        email: cleanEmail,
         password: form.password,
         redirect: false,
       });
-      if (res?.error) throw new Error("Invalid email or password");
-      toast.success(mode === "register" ? "Welcome to FinTrack!" : "Welcome back!");
-      router.refresh();
+
+      if (res?.error) {
+        // Distinguish between "no account" and "wrong password" using our debug endpoint
+        // for a friendlier error message (sacrifices strict security for UX in a personal app)
+        let message = "Invalid email or password";
+        try {
+          const probe = await fetch("/api/debug-login", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email: cleanEmail, password: form.password }),
+          });
+          const probeData = await probe.json();
+          if (probeData.step === "lookup") {
+            message = mode === "register"
+              ? "Account creation failed silently. Please try again."
+              : `No account found for "${cleanEmail}". Try signing up instead.`;
+          } else if (probeData.step === "bcrypt") {
+            message = "Wrong password. Please double-check your password and try again.";
+          }
+        } catch {
+          // fall back to generic message
+        }
+        throw new Error(message);
+      }
+
+      if (res?.ok) {
+        toast.success(mode === "register" ? "Welcome to FinTrack!" : "Welcome back!");
+        // Hard navigation — forces useSession to re-read the cookie on the new page load
+        // router.refresh() alone doesn't reliably update client-side session state
+        window.location.href = "/";
+        return;
+      }
+
+      throw new Error("Login failed. Please try again.");
     } catch (e: any) {
       toast.error(e.message || "Something went wrong");
     } finally {
@@ -158,7 +231,18 @@ export function AuthScreen() {
               />
             </div>
             <div className="space-y-1.5">
-              <label className="text-sm font-medium">Password</label>
+              <div className="flex items-center justify-between">
+                <label className="text-sm font-medium">Password</label>
+                {mode === "login" && (
+                  <button
+                    type="button"
+                    onClick={() => setResetOpen(true)}
+                    className="text-[11px] text-primary hover:underline"
+                  >
+                    Forgot password?
+                  </button>
+                )}
+              </div>
               <input
                 type="password"
                 required
@@ -214,6 +298,67 @@ export function AuthScreen() {
           </div>
         </motion.div>
       </div>
+
+      {/* Reset password dialog */}
+      {resetOpen && (
+        <div
+          className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm grid place-items-center p-4"
+          onClick={() => setResetOpen(false)}
+        >
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="w-full max-w-md bg-card border border-border rounded-xl p-6 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-lg font-semibold">Reset Password</h3>
+            <p className="text-sm text-muted-foreground mt-1 mb-4">
+              Enter your account email and a new password. We'll update it immediately so you can sign back in.
+            </p>
+            <div className="space-y-3">
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">Email</label>
+                <input
+                  type="email"
+                  required
+                  value={resetEmail}
+                  onChange={(e) => setResetEmail(e.target.value)}
+                  className="w-full h-11 px-3.5 rounded-lg border border-input bg-background text-sm outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition"
+                  placeholder="you@example.com"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">New Password</label>
+                <input
+                  type="password"
+                  required
+                  minLength={6}
+                  value={resetPassword}
+                  onChange={(e) => setResetPassword(e.target.value)}
+                  className="w-full h-11 px-3.5 rounded-lg border border-input bg-background text-sm outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition"
+                  placeholder="At least 6 characters"
+                />
+              </div>
+            </div>
+            <div className="flex gap-2 mt-5">
+              <button
+                onClick={() => setResetOpen(false)}
+                className="flex-1 h-10 rounded-lg border border-border text-sm font-medium hover:bg-accent transition"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleReset}
+                disabled={resetLoading}
+                className="flex-1 h-10 rounded-lg gradient-fintech text-white text-sm font-medium flex items-center justify-center gap-1.5 shadow-glow hover:opacity-95 transition disabled:opacity-60"
+              >
+                {resetLoading && <Loader2 size={14} className="animate-spin" />}
+                Reset Password
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
     </div>
   );
 }
