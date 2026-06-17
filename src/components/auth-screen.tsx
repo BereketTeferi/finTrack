@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { signIn } from "next-auth/react";
 import { motion } from "framer-motion";
 import { Sparkles, TrendingUp, Wallet, PieChart, ArrowRight, Loader2 } from "lucide-react";
@@ -14,6 +14,19 @@ export function AuthScreen() {
   const [resetEmail, setResetEmail] = useState("");
   const [resetPassword, setResetPassword] = useState("");
   const [resetLoading, setResetLoading] = useState(false);
+
+  // On mount, clear any stale __Secure- prefixed cookies from before the fix.
+  // NextAuth v4 sets __Secure- prefixed cookies when X-Forwarded-Proto: https
+  // is detected, but our new config uses the non-prefixed name. Old cookies
+  // would otherwise linger in the browser and cause confusion.
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const stale = ["__Secure-next-auth.session-token", "__Secure-next-auth.callback-url", "__Secure-next-auth.csrf-token"];
+    stale.forEach((name) => {
+      document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
+      document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=${window.location.hostname};`;
+    });
+  }, []);
 
   const handleReset = async () => {
     if (!resetEmail || !resetPassword) {
@@ -100,8 +113,24 @@ export function AuthScreen() {
 
       if (res?.ok) {
         toast.success(mode === "register" ? "Welcome to FinTrack!" : "Welcome back!");
-        // Hard navigation — forces useSession to re-read the cookie on the new page load
-        // router.refresh() alone doesn't reliably update client-side session state
+        // Give the Set-Cookie header a moment to land in the browser, then do a
+        // hard navigation. We also verify the session is actually set before
+        // redirecting, with a few retries, to avoid landing on the auth screen
+        // again due to a race condition.
+        let sessionOk = false;
+        for (let i = 0; i < 5; i++) {
+          await new Promise((r) => setTimeout(r, 200));
+          try {
+            const s = await fetch("/api/auth/session", { cache: "no-store" }).then((r) => r.json());
+            if (s?.user?.id) {
+              sessionOk = true;
+              break;
+            }
+          } catch {
+            // ignore and retry
+          }
+        }
+        // Hard navigation forces useSession to re-read the cookie on the new page load.
         window.location.href = "/";
         return;
       }
