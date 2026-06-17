@@ -1,0 +1,218 @@
+// Prisma schema for Expense & Income Tracker
+// SQLite backend (no enums — use String + validation; no native arrays — use JSON or join tables)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  name          String
+  passwordHash  String
+  currency      String   @default("USD")
+  avatarColor   String   @default("violet")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  accounts              Account[]
+  categories            Category[]
+  transactions          Transaction[]
+  budgets               Budget[]
+  recurringTransactions RecurringTransaction[]
+  customFields          CustomField[]
+  tags                  Tag[]
+  notifications         Notification[]
+}
+
+model Account {
+  id        String   @id @default(cuid())
+  userId    String
+  name      String
+  type      String   // CASH | BANK | SAVINGS | CREDIT_CARD | MOBILE_WALLET
+  balance   Float    @default(0)
+  currency  String   @default("USD")
+  color     String   @default("blue")
+  icon      String   @default("wallet")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions        Transaction[]  @relation("AccountTransactions")
+  transfersOut        Transfer[]     @relation("TransferFrom")
+  transfersIn         Transfer[]     @relation("TransferTo")
+  recurring           RecurringTransaction[]
+  customFields        CustomField[]
+
+  @@index([userId])
+}
+
+model Category {
+  id        String   @id @default(cuid())
+  userId    String
+  name      String
+  type      String   // INCOME | EXPENSE
+  color     String   @default("blue")
+  icon      String   @default("tag")
+  isDefault Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user       User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions        Transaction[]  @relation("CategoryTransactions")
+  budgets             Budget[]
+  recurring           RecurringTransaction[]
+
+  @@unique([userId, name, type])
+  @@index([userId])
+}
+
+model Transaction {
+  id          String   @id @default(cuid())
+  userId      String
+  accountId   String
+  categoryId  String?
+  type        String   // INCOME | EXPENSE | TRANSFER
+  amount      Float
+  currency    String   @default("USD")
+  date        DateTime
+  description String
+  notes       String?
+  tags        String   @default("[]") // JSON array of tag names
+  recurringId String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  account    Account    @relation("AccountTransactions", fields: [accountId], references: [id], onDelete: Cascade)
+  category   Category?  @relation("CategoryTransactions", fields: [categoryId], references: [id], onDelete: SetNull)
+  customFieldValues CustomFieldValue[]
+  recurring  RecurringTransaction? @relation(fields: [recurringId], references: [id])
+
+  @@index([userId, date])
+  @@index([userId, type])
+  @@index([accountId])
+  @@index([categoryId])
+}
+
+model Transfer {
+  id          String   @id @default(cuid())
+  userId      String
+  fromAccountId String
+  toAccountId   String
+  amount      Float
+  date        DateTime
+  notes       String?
+  createdAt   DateTime @default(now())
+
+  fromAccount Account @relation("TransferFrom", fields: [fromAccountId], references: [id], onDelete: Cascade)
+  toAccount   Account @relation("TransferTo", fields: [toAccountId], references: [id], onDelete: Cascade)
+}
+
+model CustomField {
+  id        String   @id @default(cuid())
+  userId    String
+  accountId String?  // null = global, otherwise scoped to an account
+  name      String
+  type      String   // TEXT | NUMBER | DATE | DROPDOWN | CHECKBOX
+  options   String   @default("[]") // JSON array of dropdown options
+  required  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  account    Account?   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  values     CustomFieldValue[]
+
+  @@index([userId])
+  @@index([accountId])
+}
+
+model CustomFieldValue {
+  id            String @id @default(cuid())
+  transactionId String
+  customFieldId String
+  value         String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  transaction Transaction  @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  customField CustomField  @relation(fields: [customFieldId], references: [id], onDelete: Cascade)
+
+  @@unique([transactionId, customFieldId])
+  @@index([transactionId])
+}
+
+model Tag {
+  id     String @id @default(cuid())
+  userId String
+  name   String
+  color  String @default("gray")
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, name])
+  @@index([userId])
+}
+
+model Budget {
+  id         String  @id @default(cuid())
+  userId     String
+  categoryId String?
+  amount     Float
+  period     String  // MONTHLY | WEEKLY | YEARLY
+  month      Int?    // 1-12 for monthly
+  year       Int
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  category  Category? @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@index([userId, year])
+}
+
+model RecurringTransaction {
+  id          String   @id @default(cuid())
+  userId      String
+  accountId   String
+  categoryId  String?
+  type        String   // INCOME | EXPENSE
+  amount      Float
+  description String
+  frequency   String   // DAILY | WEEKLY | MONTHLY | YEARLY
+  interval    Int      @default(1)
+  nextDate    DateTime
+  endDate     DateTime?
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  account    Account    @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  category   Category?  @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  transactions        Transaction[]
+
+  @@index([userId])
+  @@index([nextDate])
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  type      String   // BUDGET_LIMIT | UPCOMING_BILL | LOW_BALANCE | RECURRING | INSIGHT | GENERAL
+  title     String
+  message   String
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, read])
+}
