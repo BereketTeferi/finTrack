@@ -20,12 +20,15 @@ const __dirname = path.dirname(__filename);
 
 const schemaPath = path.join(__dirname, "..", "prisma", "schema.prisma");
 
-// Load .env manually (so this works without dotenv)
+// Load .env manually (so this works without dotenv).
+// .env takes precedence over any pre-existing process.env values from the
+// parent shell — this is important because the dev server (next dev) injects
+// DATABASE_URL into process.env before our script runs.
 const envPath = path.join(__dirname, "..", ".env");
 if (fs.existsSync(envPath)) {
   for (const line of fs.readFileSync(envPath, "utf8").split("\n")) {
     const m = line.match(/^([A-Z_]+)=(.*)$/);
-    if (m && !process.env[m[1]]) {
+    if (m) {
       process.env[m[1]] = m[2].replace(/^["']|["']$/g, "");
     }
   }
