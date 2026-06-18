@@ -403,3 +403,72 @@ Stage Summary:
 - All data syncs automatically (same Neon Postgres backend)
 - Works offline (cached app shell + cached API GETs)
 - 3 long-press shortcuts: Add Transaction, Dashboard, Analytics
+
+---
+Task ID: 11
+Agent: main
+Task: Update favicon, expand currencies (incl. ETB), write README
+
+Work Log:
+1. Favicon regeneration:
+   - Created scripts/generate-favicon.py — generates favicon.ico (multi-size: 16/32/48) + favicon-{16,32,48}.png
+   - Uses same brand gradient (violet→blue→purple) and sparkle mark as PWA icons
+   - Updated public/logo.svg to match brand (gradient bg + sparkle mark)
+   - Updated layout.tsx icons config to reference all new favicon sizes
+   - Old favicon.ico: 1.1KB (Next.js default). New: 276 bytes (brand icon)
+
+2. Currency expansion (6 → 69 currencies):
+   - Created src/lib/currencies.ts with comprehensive list organized by region:
+     - Major world (10): USD, EUR, GBP, JPY, CNY, INR, CHF, CAD, AUD, NZD
+     - African (12): ETB, NGN, ZAR, KES, GHS, EGP, MAD, TND, UGX, TZS, RWF, XOF, XAF
+     - Middle East (11): AED, SAR, QAR, KWD, BHD, OMR, JOD, LBP, ILS, TRY, IRR
+     - Asia (13): HKD, TWD, KRW, SGD, MYR, THB, IDR, PHP, VND, PKR, BDT, LKR, NPR
+     - Europe non-Euro (12): SEK, NOK, DKK, PLN, CZK, HUF, RON, BGN, HRK, RUB, UAH, ISK
+     - Americas non-USD (7): MXN, BRL, ARS, CLP, COP, PEN, UYU
+     - Oceania (1): FJD
+     - Crypto (2): BTC, ETH
+   - Each currency has: code, name, symbol, locale (BCP-47 for Intl.NumberFormat)
+   - Added getCurrency() helper with USD fallback
+   - ETB uses symbol "Br" and locale "am-ET" — displays as "ብር 1,234.56" (native Amharic)
+   - Updated src/lib/finance.ts formatCurrency() + formatCompact() to use new currency list
+   - Tested: USD→$1,234.56, ETB→ብር 1,234.56, EUR→1.234,56 €, INR→₹1,234.56, JPY→￥1,234.56
+
+3. Settings UI update:
+   - Removed hardcoded 6-currency CURRENCIES array
+   - Created searchable CurrencyPicker component with:
+     - Search box (filter by code, name, or symbol)
+     - Scrollable list (max-h-72) with all 69 currencies
+     - Each row shows: large symbol, code, name, checkmark if selected
+     - Click-away overlay to close
+     - Live preview: "Sample: $1,234.56" shown below picker
+   - Updated grid layout to col-span-2 on mobile for better UX
+   - Added "69+ currencies available" hint
+
+4. README.md (513 lines):
+   - Hero section with badges (Next.js, TypeScript, Prisma, PostgreSQL, Tailwind, NextAuth, PWA, MIT)
+   - Centered logo + tagline
+   - Table of contents with anchor links
+   - Overview section
+   - Detailed Features section (Auth, Dashboard, Transactions, Accounts, Budgets, Analytics, Smart Insights, Categories, Recurring, Custom Fields, Notifications, Settings, UI/UX, PWA)
+   - Tech stack table
+   - Screenshots table
+   - Quick start guide (4 steps)
+   - Deployment section (Vercel + other platforms)
+   - Project structure tree
+   - Database schema overview
+   - API reference tables (Auth, Transactions, Accounts, Analytics, Export, Utility)
+   - PWA install instructions (Android + iOS + long-press shortcuts + sync explanation)
+   - Contributing guide
+   - MIT license footer
+
+Verification:
+- Lint clean
+- All PWA endpoints serve HTTP 200 (favicon.ico, logo.svg, manifest.json, sw.js)
+- 69 unique currencies, ETB present
+- README.md is 513 lines, comprehensive with badges and visual hierarchy
+
+Stage Summary:
+- Favicon now matches PWA brand icon (gradient + sparkle)
+- 69 currencies supported (was 6), including ETB with native Amharic symbol
+- Settings page has searchable currency picker with live preview
+- README.md is GitHub-ready with badges, screenshots, full API reference, deployment guide

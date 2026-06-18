@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useSession, signOut } from "next-auth/react";
 import { useMe, useSeedDemo, useAccounts, useTransactions } from "@/lib/queries";
 import { Card } from "@/components/ui/card";
@@ -13,7 +13,7 @@ import {
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   User, Mail, CalendarDays, Database, Download, LogOut, Save, Trash2,
-  ShieldCheck, Palette, Globe,
+  ShieldCheck, Palette, Globe, Search,
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -22,15 +22,8 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-
-const CURRENCIES = [
-  { value: "USD", label: "USD — US Dollar ($)" },
-  { value: "EUR", label: "EUR — Euro (€)" },
-  { value: "GBP", label: "GBP — British Pound (£)" },
-  { value: "JPY", label: "JPY — Japanese Yen (¥)" },
-  { value: "INR", label: "INR — Indian Rupee (₹)" },
-  { value: "CNY", label: "CNY — Chinese Yuan (¥)" },
-];
+import { CURRENCIES } from "@/lib/currencies";
+import { colorClasses, formatCurrency } from "@/lib/finance";
 
 const AVATAR_COLORS = ["violet", "blue", "emerald", "amber", "rose", "cyan", "pink", "indigo"];
 
@@ -118,16 +111,14 @@ export function SettingsView() {
             <Input value={user?.email || ""} disabled className="h-11" />
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
+            <div className="space-y-1.5 col-span-2 sm:col-span-1">
               <Label className="flex items-center gap-1.5"><Globe size={12} /> Currency</Label>
-              <Select value={currency} onValueChange={setCurrency}>
-                <SelectTrigger className="h-11"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {CURRENCIES.map(c => <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>)}
-                </SelectContent>
-              </Select>
+              <CurrencyPicker value={currency} onChange={setCurrency} />
+              <p className="text-[11px] text-muted-foreground">
+                {CURRENCIES.length}+ currencies available · Sample: {formatCurrency(1234.56, currency)}
+              </p>
             </div>
-            <div className="space-y-1.5">
+            <div className="space-y-1.5 col-span-2 sm:col-span-1">
               <Label className="flex items-center gap-1.5"><Palette size={12} /> Avatar Color</Label>
               <div className="flex flex-wrap gap-2 h-11 items-center">
                 {AVATAR_COLORS.map(c => (
@@ -241,6 +232,104 @@ export function SettingsView() {
           </Button>
         </div>
       </Card>
+    </div>
+  );
+}
+
+/**
+ * Searchable currency picker with grouped dropdown.
+ * Renders all 60+ currencies with their symbol, code, and name.
+ * Filters as you type.
+ */
+function CurrencyPicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const [search, setSearch] = useState("");
+  const [open, setOpen] = useState(false);
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return CURRENCIES;
+    return CURRENCIES.filter(
+      (c) =>
+        c.code.toLowerCase().includes(q) ||
+        c.name.toLowerCase().includes(q) ||
+        c.symbol.toLowerCase().includes(q)
+    );
+  }, [search]);
+
+  const selected = CURRENCIES.find((c) => c.code === value) || CURRENCIES[0];
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="w-full h-11 px-3 rounded-lg border border-input bg-card text-sm flex items-center justify-between hover:bg-accent transition"
+      >
+        <span className="flex items-center gap-2.5 min-w-0">
+          <span className="font-semibold text-base w-8 text-center tabular-nums">{selected.symbol}</span>
+          <span className="truncate">
+            <span className="font-medium">{selected.code}</span>
+            <span className="text-muted-foreground ml-1.5">— {selected.name}</span>
+          </span>
+        </span>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground shrink-0">
+          <polyline points="6 9 12 15 18 9" />
+        </svg>
+      </button>
+
+      {open && (
+        <>
+          {/* Click-away overlay */}
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="absolute z-50 mt-1 w-full bg-popover border border-border rounded-lg shadow-2xl overflow-hidden">
+            {/* Search input */}
+            <div className="p-2 border-b border-border">
+              <div className="relative">
+                <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                <input
+                  autoFocus
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search currency..."
+                  className="w-full h-9 pl-8 pr-3 rounded-md bg-background text-sm border border-input outline-none focus:ring-2 focus:ring-primary/30"
+                />
+              </div>
+            </div>
+            {/* Currency list */}
+            <div className="max-h-72 overflow-y-auto no-scrollbar">
+              {filtered.length === 0 ? (
+                <div className="p-4 text-center text-sm text-muted-foreground">No currencies found</div>
+              ) : (
+                filtered.map((c) => (
+                  <button
+                    key={c.code}
+                    type="button"
+                    onClick={() => {
+                      onChange(c.code);
+                      setOpen(false);
+                      setSearch("");
+                    }}
+                    className={`w-full px-3 py-2 flex items-center gap-3 hover:bg-accent transition text-left ${
+                      c.code === value ? "bg-primary/5" : ""
+                    }`}
+                  >
+                    <span className="font-semibold text-base w-10 text-center tabular-nums shrink-0">{c.symbol}</span>
+                    <span className="flex-1 min-w-0">
+                      <span className="font-medium text-sm">{c.code}</span>
+                      <span className="text-xs text-muted-foreground block truncate">{c.name}</span>
+                    </span>
+                    {c.code === value && (
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-primary shrink-0">
+                        <polyline points="20 6 9 17 4 12" />
+                      </svg>
+                    )}
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }

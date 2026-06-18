@@ -1,5 +1,7 @@
 // Shared types & helpers for the app
 
+import { getCurrency } from "@/lib/currencies";
+
 export type TxType = "INCOME" | "EXPENSE" | "TRANSFER";
 export type AccountType = "CASH" | "BANK" | "SAVINGS" | "CREDIT_CARD" | "MOBILE_WALLET";
 export type FieldType = "TEXT" | "NUMBER" | "DATE" | "DROPDOWN" | "CHECKBOX";
@@ -80,25 +82,27 @@ export function colorClasses(color: string): {
 
 export function formatCurrency(amount: number, currency = "USD"): string {
   try {
-    return new Intl.NumberFormat("en-US", {
+    const cur = getCurrency(currency);
+    return new Intl.NumberFormat(cur.locale, {
       style: "currency",
-      currency,
+      currency: cur.code,
       maximumFractionDigits: 2,
     }).format(amount);
   } catch {
-    return `$${amount.toFixed(2)}`;
+    return `${currency} ${amount.toFixed(2)}`;
   }
 }
 
 export function formatCompact(amount: number, currency = "USD"): string {
   try {
-    return new Intl.NumberFormat("en-US", {
+    const cur = getCurrency(currency);
+    return new Intl.NumberFormat(cur.locale, {
       style: "currency",
-      currency,
+      currency: cur.code,
       notation: "compact",
       maximumFractionDigits: 1,
     }).format(amount);
   } catch {
-    return `$${amount.toFixed(0)}`;
+    return `${currency} ${amount.toFixed(0)}`;
   }
 }
