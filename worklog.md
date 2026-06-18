@@ -316,3 +316,90 @@ Stage Summary:
 - Schema is pushed (all tables created)
 - Registration verified working against Postgres
 - User needs to set 2 env vars on Vercel: DATABASE_URL + NEXTAUTH_SECRET, then redeploy
+
+---
+Task ID: 10
+Agent: main
+Task: Convert app to PWA for Android installation
+
+Work Log:
+- User wanted an Android app that syncs with the website
+- Recommended PWA approach because:
+  - Same Next.js codebase (no separate React Native/Kotlin codebase to maintain)
+  - Syncs automatically (uses same Neon Postgres backend)
+  - Installable on Android home screen with native app icon
+  - Works offline via service worker
+  - No Play Store review needed
+  - Works TODAY — no build tools required
+
+Created PWA infrastructure:
+1. scripts/generate-icons.py — Python script that generates all required icons:
+   - 192x192, 512x512 (standard)
+   - 192x192, 512x512 maskable (for Android adaptive icons)
+   - 180x180 apple-touch-icon (for iOS)
+   - 32x32 favicon + favicon.ico
+   All with brand gradient (violet→blue→purple) and sparkle mark
+2. public/manifest.json — PWA manifest with:
+   - name, short_name, description
+   - start_url, scope, display: standalone
+   - theme_color (#6366f1 violet) + background_color
+   - All 4 icon variants
+   - 3 app shortcuts (Add Transaction, Dashboard, Analytics) — long-press app icon to see them
+   - display_override for better fullscreen experience
+3. public/sw.js — Service worker with:
+   - App shell pre-caching (install event)
+   - Stale-while-revalidate for static assets
+   - Network-first for API GETs (falls back to cache when offline)
+   - Network-only for POST/PUT/DELETE (no caching of mutations)
+   - Never caches /api/auth/* (security)
+   - Push notification handler (for future use)
+   - Notification click handler (opens/focuses app)
+   - Old cache cleanup on activate
+4. src/components/sw-register.tsx — Client component that:
+   - Registers /sw.js on mount
+   - Listens for updatefound events
+   - Shows "Update available" banner when new SW is waiting
+   - Periodic update checks (every 60 min)
+   - Reloads page on controller change
+5. src/components/install-prompt.tsx — Smart install prompt:
+   - Listens for beforeinstallprompt event (Android Chrome)
+   - Shows custom install banner after 4 seconds
+   - Triggers native install prompt on "Install App" click
+   - Dismissed for 7 days if user dismisses
+   - Special iOS Safari message (no beforeinstallprompt support)
+   - Doesn't show if already installed (display-mode: standalone)
+6. src/app/layout.tsx — Updated with full PWA metadata:
+   - manifest: /manifest.json
+   - icons: 32px, 192px, apple-touch, favicon.ico
+   - appleWebApp: capable, statusBarStyle, title
+   - viewport: themeColor (light/dark), viewportFit: cover for notches
+   - Manual meta tags for iOS: apple-mobile-web-app-capable, etc.
+7. src/components/app-shell.tsx — Added:
+   - useEffect to handle PWA shortcut URL params (?action=add-transaction, ?view=analytics)
+   - Import InstallPrompt component
+   - Added pb-24 on mobile for install prompt spacing
+8. next.config.ts — Added headers:
+   - manifest.json: correct MIME type + no-cache
+   - sw.js: no-cache + Service-Worker-Allowed: /
+   - /icons/*: 1-year cache (immutable)
+9. src/app/globals.css — Added safe-area utility classes for notched devices
+
+Verification:
+- Lint clean
+- All endpoints serve correctly (manifest.json, sw.js, icons/icon-192.png — all HTTP 200)
+- Browser DOM contains all PWA meta tags:
+  - manifest link ✓
+  - theme-color #6366f1 ✓
+  - apple-touch-icon ✓
+  - apple-mobile-web-app-capable ✓
+  - apple-mobile-web-app-title "FinTrack" ✓
+- Mobile screenshot captured (390x844 viewport)
+- Dev server has known sandbox stability issues but doesn't affect Vercel
+
+Stage Summary:
+- PWA is fully implemented
+- User can install on Android: open in Chrome → menu → "Install app" → icon appears on home screen
+- User can install on iOS: open in Safari → Share → "Add to Home Screen"
+- All data syncs automatically (same Neon Postgres backend)
+- Works offline (cached app shell + cached API GETs)
+- 3 long-press shortcuts: Add Transaction, Dashboard, Analytics
