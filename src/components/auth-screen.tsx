@@ -78,7 +78,11 @@ export function AuthScreen() {
           }),
         });
         const data = await r.json();
-        if (!r.ok) throw new Error(data.error || "Failed to register");
+        if (!r.ok) {
+          // Surface the actual error message from the server (e.g. "email already exists",
+          // "password too short", or "database connection failed" if env vars are missing)
+          throw new Error(data.error || `Registration failed (HTTP ${r.status})`);
+        }
       }
 
       const res = await signIn("credentials", {
@@ -88,44 +92,26 @@ export function AuthScreen() {
       });
 
       if (res?.error) {
-        // Distinguish between "no account" and "wrong password" using our debug endpoint
-        // for a friendlier error message (sacrifices strict security for UX in a personal app)
-        let message = "Invalid email or password";
-        try {
-          const probe = await fetch("/api/debug-login", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ email: cleanEmail, password: form.password }),
-          });
-          const probeData = await probe.json();
-          if (probeData.step === "lookup") {
-            message = mode === "register"
-              ? "Account creation failed silently. Please try again."
-              : `No account found for "${cleanEmail}". Try signing up instead.`;
-          } else if (probeData.step === "bcrypt") {
-            message = "Wrong password. Please double-check your password and try again.";
-          }
-        } catch {
-          // fall back to generic message
-        }
+        // NextAuth returns a generic "CredentialsSignin" error. We surface a
+        // helpful message depending on the mode so the user knows what to do.
+        const message =
+          mode === "register"
+            ? "Account was created but automatic sign-in failed. Please sign in manually."
+            : "Wrong email or password. If you forgot your password, click \"Forgot password?\".";
         throw new Error(message);
       }
 
       if (res?.ok) {
         toast.success(mode === "register" ? "Welcome to FinTrack!" : "Welcome back!");
         // Give the Set-Cookie header a moment to land in the browser, then do a
-        // hard navigation. We also verify the session is actually set before
+        // hard navigation. We verify the session is actually set before
         // redirecting, with a few retries, to avoid landing on the auth screen
         // again due to a race condition.
-        let sessionOk = false;
         for (let i = 0; i < 5; i++) {
           await new Promise((r) => setTimeout(r, 200));
           try {
             const s = await fetch("/api/auth/session", { cache: "no-store" }).then((r) => r.json());
-            if (s?.user?.id) {
-              sessionOk = true;
-              break;
-            }
+            if (s?.user?.id) break;
           } catch {
             // ignore and retry
           }
@@ -241,6 +227,7 @@ export function AuthScreen() {
                 <input
                   type="text"
                   required
+                  autoComplete="name"
                   value={form.name}
                   onChange={(e) => setForm({ ...form, name: e.target.value })}
                   className="w-full h-11 px-3.5 rounded-lg border border-input bg-card text-sm outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition"
@@ -253,6 +240,7 @@ export function AuthScreen() {
               <input
                 type="email"
                 required
+                autoComplete="email"
                 value={form.email}
                 onChange={(e) => setForm({ ...form, email: e.target.value })}
                 className="w-full h-11 px-3.5 rounded-lg border border-input bg-card text-sm outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition"
@@ -276,6 +264,7 @@ export function AuthScreen() {
                 type="password"
                 required
                 minLength={6}
+                autoComplete={mode === "login" ? "current-password" : "new-password"}
                 value={form.password}
                 onChange={(e) => setForm({ ...form, password: e.target.value })}
                 className="w-full h-11 px-3.5 rounded-lg border border-input bg-card text-sm outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition"
@@ -350,6 +339,7 @@ export function AuthScreen() {
                 <input
                   type="email"
                   required
+                  autoComplete="email"
                   value={resetEmail}
                   onChange={(e) => setResetEmail(e.target.value)}
                   className="w-full h-11 px-3.5 rounded-lg border border-input bg-background text-sm outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition"
@@ -362,6 +352,7 @@ export function AuthScreen() {
                   type="password"
                   required
                   minLength={6}
+                  autoComplete="new-password"
                   value={resetPassword}
                   onChange={(e) => setResetPassword(e.target.value)}
                   className="w-full h-11 px-3.5 rounded-lg border border-input bg-background text-sm outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition"

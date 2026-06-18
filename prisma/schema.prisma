@@ -1,5 +1,13 @@
 // Prisma schema for Expense & Income Tracker
-// SQLite backend (no enums — use String + validation; no native arrays — use JSON or join tables)
+//
+// The `provider` line below is AUTO-MANAGED by `bun run prisma:switch` (and
+// the postinstall hook). It switches between:
+//   - "sqlite"      for local dev (DATABASE_URL starts with file:)
+//   - "postgresql"  for production / Vercel (DATABASE_URL starts with postgresql://)
+//
+// SQLite is NOT compatible with serverless platforms (Vercel) because they
+// have read-only filesystems. PostgreSQL is required for Vercel deployment.
+// See DEPLOY.md for setup instructions.
 
 generator client {
   provider = "prisma-client-js"

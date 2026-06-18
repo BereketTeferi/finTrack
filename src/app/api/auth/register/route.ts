@@ -80,11 +80,24 @@ export async function POST(req: Request) {
     });
 
     return NextResponse.json({ ok: true, userId: user.id });
-  } catch (e) {
+  } catch (e: any) {
     console.error("register error", e);
-    return NextResponse.json(
-      { error: "Failed to register. Please try again." },
-      { status: 500 }
-    );
+    // Provide a helpful error message for the most common deployment issue:
+    // missing DATABASE_URL or unreachable database on Vercel/serverless.
+    const msg = e?.message || "";
+    let userMessage = "Failed to register. Please try again.";
+    if (
+      msg.includes("DATABASE_URL") ||
+      msg.includes("connect") ||
+      msg.includes("PrismaClientInitializationError") ||
+      msg.includes("Tenant database") ||
+      msg.includes("Can't reach database server")
+    ) {
+      userMessage =
+        "Database connection failed. If you're deploying to Vercel, make sure to set the DATABASE_URL environment variable to a PostgreSQL connection string (SQLite doesn't work on Vercel). See the deployment guide.";
+    } else if (msg.includes("already exists")) {
+      userMessage = "An account with this email already exists. Try signing in instead.";
+    }
+    return NextResponse.json({ error: userMessage }, { status: 500 });
   }
 }

@@ -230,3 +230,56 @@ Stage Summary:
 - Fix applied: explicit cookie config forces consistent non-prefixed naming
 - User should now be able to log in via the preview URL
 - If issue persists, user should: (1) hard refresh (Ctrl+Shift+R) to clear browser cache, (2) try incognito/private window to rule out stale cookies, (3) use "Forgot password?" to reset if password is uncertain
+
+---
+Task ID: 8
+Agent: main
+Task: Fix Vercel deployment 500 errors — migrate from SQLite to PostgreSQL
+
+Work Log:
+- User deployed to Vercel, got 500 errors on /api/auth/register and /api/debug-login
+- Diagnosed root cause: SQLite is incompatible with Vercel serverless (read-only filesystem)
+- The local SQLite database file (db/custom.db) doesn't exist on Vercel, and even if it did, serverless can't write to it
+- Also fixed: missing autocomplete attributes (browser warning), removed debug-login endpoint from production
+
+Changes:
+1. prisma/schema.prisma: Added auto-switching comment; provider line is now managed by prisma-switch.mjs script (sqlite for local dev, postgresql for production)
+2. scripts/prisma-switch.mjs: New ESM script that:
+   - Reads DATABASE_URL from .env
+   - Auto-detects provider: file: → sqlite, postgresql:// → postgresql
+   - Defaults to postgresql on Vercel/production, sqlite for local dev
+   - Updates prisma/schema.prisma's provider line
+   - Runs prisma generate
+3. package.json:
+   - Added "postinstall": "node scripts/prisma-switch.mjs && prisma generate" — runs on Vercel install, auto-switches to postgresql
+   - Added "prisma:switch" script for manual switching
+   - Simplified "build" to just "next build" (Vercel handles standalone output automatically)
+   - Changed "start" to "next start" (Vercel standard)
+4. src/lib/db.ts: Cleaned up Prisma client init — only logs queries in dev, errors only in prod (better for Vercel logs)
+5. src/components/auth-screen.tsx:
+   - Added autoComplete="name" / "email" / "current-password" / "new-password" to all inputs (fixes browser warning)
+   - Removed dependency on /api/debug-login endpoint (deleted)
+   - Improved error messages — surfaces actual server error from /api/auth/register (e.g. "Database connection failed. If you're deploying to Vercel, make sure to set the DATABASE_URL environment variable to a PostgreSQL connection string...")
+6. src/app/api/auth/register/route.ts: Better error handling — detects Prisma connection errors and surfaces a helpful message about DATABASE_URL / PostgreSQL
+7. Removed: /api/debug-login (should not ship debug code to production)
+8. Created .env.example — documents DATABASE_URL (Postgres), NEXTAUTH_SECRET, NEXTAUTH_URL with examples for Neon/Supabase/Vercel Postgres
+9. Created DEPLOY.md — comprehensive deployment guide covering:
+   - Why SQLite doesn't work on Vercel
+   - Step 1: Create free Postgres DB (Neon recommended, also Supabase/Vercel Postgres)
+   - Step 2: Push schema with DATABASE_URL set
+   - Step 3: Set env vars on Vercel (DATABASE_URL, NEXTAUTH_SECRET)
+   - Step 4: Verify deployment + check Vercel logs
+   - Local dev options
+   - Troubleshooting common issues
+10. .gitignore: Added /db/*.db and /download/
+
+Verification:
+- Local dev (SQLite): bun run db:push succeeds, app loads, login/registration works
+- prisma-switch.mjs: tested auto-detect (sqlite), force sqlite, force postgresql — all work
+- Lint clean
+- Vercel will auto-switch to postgresql on install (via postinstall hook)
+
+Stage Summary:
+- Root cause fixed: PostgreSQL now used on Vercel (SQLite for local dev only)
+- User needs to: (1) create free Postgres DB on Neon, (2) set DATABASE_URL + NEXTAUTH_SECRET on Vercel, (3) run `bun run db:push` with DATABASE_URL pointed at the Postgres DB to create tables, (4) redeploy
+- All steps documented in DEPLOY.md
